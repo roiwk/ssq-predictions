@@ -31,12 +31,13 @@ cp env.example .env
     "predictTime": "2026-02-12 10:00:00",
     "strategies": [
       {
-        "id": "hot-cold-v1",
-        "name": "冷热号组合",
-        "featureSet": ["hot", "cold", "oddEven"],
-        "red": [1, 7, 12, 19, 28, 33],
+        "id": "freq",
+        "name": "频率统计策略（分析 80 期, 热号=0.6, 遗漏=0.4）",
+        "description": "基于近期出现频率与遗漏值进行加权统计选号...",
+        "deterministic": true,
+        "red": [2, 8, 9, 13, 23, 24],
         "blue": 9,
-        "confidence": 0.71
+        "elapsed": 0
       }
     ]
   }
@@ -49,10 +50,11 @@ cp env.example .env
 - `predictTime`: 预测生成时间，字符串。
 - `strategies`: 预测策略列表（至少 1 条）。
 - `strategies[].name`: 策略名。
-- `strategies[].featureSet`: 特征组合数组。
+- `strategies[].description`: 策略描述说明（面向用户的文案）。
+- `strategies[].deterministic`: 是否为确定性策略（布尔值）。
 - `strategies[].red`: 红球数组（6 个数字）。
 - `strategies[].blue`: 蓝球数字（1 个数字）。
-- `strategies[].confidence`: 0~1 的小数，可选。
+- `strategies[].elapsed`: 策略运行耗时（秒），可选。
 - `issue`/`latestIssue`: 兼容旧字段，可选；建议统一为 `latestDrawIssue`。
 
 > 兼容说明：前端也兼容返回不带 `data` 的扁平结构。
