@@ -192,8 +192,8 @@ onMounted(loadPredictions)
 
 .disclaimer {
   margin-top: 4px;
-  padding: 12px 14px;
-  font-size: 11px;
+  padding: 14px 16px;
+  font-size: 14px;
   line-height: 1.7;
   color: #7a8aaa;
   background: rgba(255, 255, 255, 0.6);
