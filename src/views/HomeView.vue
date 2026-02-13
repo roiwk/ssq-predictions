@@ -43,7 +43,7 @@ async function loadPredictions() {
     const response = await fetchPredictionResult()
     const payload = response || {}
     latestDrawIssue.value = payload.latestDrawIssue || payload.issue || ''
-    predictTime.value = payload.predictTime || ''
+    predictTime.value = payload.updatedAt || payload.predictTime || ''
     totalPeriods.value = payload.totalPeriods || 0
     strategies.value = Array.isArray(payload.strategies) ? payload.strategies : []
   } catch (error) {
