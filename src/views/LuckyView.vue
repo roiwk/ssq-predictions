@@ -5,10 +5,11 @@ import { fetchHistoryDraws } from '../api/ssq'
 // ══════════════════════════════════════════
 //  基本状态
 // ══════════════════════════════════════════
-const groupCount  = ref(1)
-const results     = ref([])
-const phase       = ref('idle')   // 'idle' | 'countdown' | 'rolling' | 'done'
-const shook       = ref(false)
+const groupCount      = ref(1)
+const results         = ref([])
+const phase           = ref('idle')   // 'idle' | 'countdown' | 'rolling' | 'done'
+const shook           = ref(false)
+const inputCollapsed  = ref(false)    // 摇完后折叠输入区
 
 // ══════════════════════════════════════════
 //  Tab 控制：'shake' | 'settings' | 'history'
@@ -70,8 +71,16 @@ function saveHistory(rows) {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(shakeHistory.value))
 }
 
+const confirmingClear = ref(false)
+let confirmTimer = null
 function clearHistory() {
-  if (!confirm('确认清空全部历史记录？')) return
+  if (!confirmingClear.value) {
+    confirmingClear.value = true
+    confirmTimer = setTimeout(() => { confirmingClear.value = false }, 3000)
+    return
+  }
+  clearTimeout(confirmTimer)
+  confirmingClear.value = false
   shakeHistory.value = []
   localStorage.removeItem(HISTORY_KEY)
 }
@@ -113,12 +122,27 @@ function matchCount(row, draw) {
   return { redMatch, blueMatch }
 }
 
+/** 根据匹配数估算奖级描述 */
+function prizeLabel({ redMatch, blueMatch }) {
+  if (redMatch === 6 && blueMatch) return { text: '一等奖', cls: 'prize-1' }
+  if (redMatch === 6 && !blueMatch) return { text: '二等奖', cls: 'prize-2' }
+  if (redMatch === 5 && blueMatch) return { text: '三等奖', cls: 'prize-3' }
+  if (redMatch === 5 && !blueMatch) return { text: '四等奖', cls: 'prize-4' }
+  if (redMatch === 4 && blueMatch) return { text: '四等奖', cls: 'prize-4' }
+  if (redMatch === 4 && !blueMatch) return { text: '五等奖', cls: 'prize-5' }
+  if (redMatch === 3 && blueMatch) return { text: '五等奖', cls: 'prize-5' }
+  if (redMatch === 2 && blueMatch) return { text: '六等奖', cls: 'prize-6' }
+  if (redMatch === 1 && blueMatch) return { text: '六等奖', cls: 'prize-6' }
+  if (redMatch === 0 && blueMatch) return { text: '六等奖', cls: 'prize-6' }
+  return { text: '未中奖', cls: 'prize-none' }
+}
+
 // ══════════════════════════════════════════
 //  辅助函数
 // ══════════════════════════════════════════
 const isValid = computed(() => {
   const n = Number(groupCount.value)
-  return Number.isInteger(n) && n >= 1 && n <= 100
+  return Number.isInteger(n) && n >= 1 && n <= 10
 })
 
 // 可用红球（排除 + 已固定）
@@ -217,7 +241,8 @@ async function commitResults() {
 
   phase.value = 'done'
   shook.value = true
-  saveHistory(results.value)  // B1
+  inputCollapsed.value = true   // 摇完后折叠输入区
+  saveHistory(results.value)    // B1
 }
 
 async function doShake() {
@@ -402,58 +427,97 @@ function matchClass({ redMatch, blueMatch }) {
 
     <!-- ████ 摇号 Tab ████ -->
     <template v-if="activeTab === 'shake'">
-      <section class="input-card">
-        <label class="input-label" for="group-count">需要生成的注数</label>
-        <div class="input-row">
-          <button class="qty-btn" @click="groupCount = Math.max(1, Number(groupCount) - 1)">−</button>
-          <input id="group-count" v-model.number="groupCount" class="qty-input"
-            type="number" min="1" max="100" inputmode="numeric" pattern="[0-9]*" />
-          <button class="qty-btn" @click="groupCount = Math.min(100, Number(groupCount) + 1)">+</button>
-        </div>
-        <p class="input-hint">可输入 1 ~ 100 注</p>
 
-        <!-- 筛选摘要 -->
-        <div v-if="excludeReds.size || pinnedReds.size || excludeBlues.size || noConsecutive" class="filter-summary">
-          <span v-if="pinnedReds.size"   class="fs-tag pin-tag">📌 固定 {{ pinnedReds.size }} 个红球</span>
-          <span v-if="excludeReds.size"  class="fs-tag ex-tag">🚫 排除 {{ excludeReds.size }} 个红球</span>
-          <span v-if="excludeBlues.size" class="fs-tag ex-tag">🚫 排除 {{ excludeBlues.size }} 个蓝球</span>
-          <span v-if="noConsecutive"     class="fs-tag con-tag">🔗 过滤连号</span>
-          <button class="fs-clear" @click="clearAllFilters">清除全部</button>
-        </div>
+      <!-- 单一输入卡：通过 .compact 类触发 grid 压缩动效，全功能保留 -->
+      <section class="input-card" :class="{ compact: inputCollapsed && phase === 'done' }">
 
-        <!-- D4 & D2 开关 -->
-        <label class="toggle-row" for="roll-mode-toggle">
-          <span class="toggle-label">⏱ 倒计时搅机模式</span>
-          <span class="toggle-wrap">
-            <input id="roll-mode-toggle" type="checkbox" v-model="rollMode" class="toggle-input" />
-            <span class="toggle-track" :class="{ on: rollMode }"><span class="toggle-thumb"></span></span>
-          </span>
-        </label>
-        <label class="toggle-row" for="shake-toggle" style="cursor:default">
-          <span class="toggle-label">📳 摇一摇触发摇号</span>
-          <button id="shake-toggle" class="shake-toggle-btn" :class="{ active: shakeEnabled }"
-            @click="shakeEnabled ? disableShake() : enableShake()">
-            {{ shakeEnabled ? '已开启' : '开启' }}
+        <!-- ── 永远可见的控制条（两种状态下均在） ── -->
+        <div class="ctrl-bar">
+          <!-- 注数步进器 -->
+          <div class="qty-stepper">
+            <button class="qty-mini-btn" @click="groupCount = Math.max(1, Number(groupCount) - 1)">−</button>
+            <span class="qty-display">{{ groupCount }}<small>注</small></span>
+            <button class="qty-mini-btn" @click="groupCount = Math.min(10, Number(groupCount) + 1)">+</button>
+          </div>
+
+          <!-- 模式快捷图标（紧凑态更明显） -->
+          <div class="mode-chips">
+            <button class="mode-chip" :class="{ 'mc-on': rollMode }"
+              @click="rollMode = !rollMode" title="倒计时搅机">⏱</button>
+            <button class="mode-chip" :class="{ 'mc-on': shakeEnabled }"
+              @click="shakeEnabled ? disableShake() : enableShake()" title="摇一摇">📳</button>
+            <button class="mode-chip" :class="{ 'mc-on': noConsecutive }"
+              @click="noConsecutive = !noConsecutive" title="过滤连号">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="display:block">
+                <path d="M3 4a1 1 0 0 1 1-1h16a1 1 0 0 1 .77 1.64L14 12.59V19a1 1 0 0 1-.45.832l-4 2.667A1 1 0 0 1 8 21.6V12.59L3.23 5.64A1 1 0 0 1 3 4z"/>
+              </svg>
+            </button>
+            <button v-if="excludeReds.size || pinnedReds.size || excludeBlues.size"
+              class="mode-chip mc-filter" @click="clearAllFilters" title="已有号码筛选（点击清除）">
+              🎯{{ pinnedReds.size + excludeReds.size + excludeBlues.size }}
+            </button>
+          </div>
+
+          <!-- 摇号按钮（紧凑态为小胶囊，展开态全宽） -->
+          <button class="ctrl-shake-btn"
+            :class="{ loading: phase === 'rolling' || phase === 'countdown' }"
+            :disabled="!isValid || phase === 'rolling' || phase === 'countdown'"
+            @click="doShake">
+            <Transition name="count-flip" mode="out-in">
+              <span v-if="phase === 'countdown'" :key="countdown" class="countdown-num-sm">{{ countdown }}</span>
+              <span v-else-if="phase === 'rolling'">🎰</span>
+              <span v-else>🎉 摇号</span>
+            </Transition>
           </button>
-        </label>
-        <Transition name="tip-fade">
-          <p v-if="shakeHint === 'granted'"     class="shake-hint success">✅ 摇一摇已开启</p>
-          <p v-else-if="shakeHint === 'denied'"      class="shake-hint warn">⚠️ 权限被拒绝，请在系统设置中允许</p>
-          <p v-else-if="shakeHint === 'unsupported'" class="shake-hint warn">⚠️ 当前设备不支持此功能</p>
-        </Transition>
 
-        <!-- 主按钮 -->
-        <button class="shake-btn"
-          :class="{ loading: phase === 'rolling' || phase === 'countdown' }"
-          :disabled="!isValid || phase === 'rolling' || phase === 'countdown'"
-          @click="doShake">
-          <Transition name="count-flip" mode="out-in">
-            <span v-if="phase === 'countdown'" :key="countdown" class="countdown-num">{{ countdown }}</span>
-            <span v-else-if="phase === 'rolling'" class="shake-spinner">🎰</span>
-            <span v-else>🎉 开始摇号</span>
-          </Transition>
-        </button>
-        <p v-if="shakeEnabled" class="shake-tip-mini">或摇动手机触发</p>
+          <!-- 展开/收起小箭头（摇完后显示） -->
+          <button v-if="phase === 'done'" class="chevron-btn"
+            @click="inputCollapsed = !inputCollapsed"
+            :title="inputCollapsed ? '展开设置' : '收起设置'">
+            <span class="chevron-icon" :style="{ transform: inputCollapsed ? 'rotate(180deg)' : 'rotate(0deg)' }">⌄</span>
+          </button>
+        </div>
+
+        <!-- ── 可折叠详细设置（grid-template-rows 动效） ── -->
+        <div class="ctrl-body">
+          <div class="ctrl-body-inner">
+            <!-- 筛选摘要 -->
+            <div v-if="excludeReds.size || pinnedReds.size || excludeBlues.size || noConsecutive" class="filter-summary">
+              <span v-if="pinnedReds.size"   class="fs-tag pin-tag">📌 固定 {{ pinnedReds.size }} 个红球</span>
+              <span v-if="excludeReds.size"  class="fs-tag ex-tag">🚫 排除 {{ excludeReds.size }} 个红球</span>
+              <span v-if="excludeBlues.size" class="fs-tag ex-tag">🚫 排除 {{ excludeBlues.size }} 个蓝球</span>
+              <span v-if="noConsecutive"     class="fs-tag con-tag">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style="display:inline-block;vertical-align:-1px;margin-right:3px"><path d="M3 4a1 1 0 0 1 1-1h16a1 1 0 0 1 .77 1.64L14 12.59V19a1 1 0 0 1-.45.832l-4 2.667A1 1 0 0 1 8 21.6V12.59L3.23 5.64A1 1 0 0 1 3 4z"/></svg>过滤连号</span>
+              <button class="fs-clear" @click="clearAllFilters">清除全部</button>
+            </div>
+
+            <!-- D4 倒计时开关 -->
+            <label class="toggle-row" for="roll-mode-toggle">
+              <span class="toggle-label">⏱ 倒计时搅机模式</span>
+              <span class="toggle-wrap">
+                <input id="roll-mode-toggle" type="checkbox" v-model="rollMode" class="toggle-input" />
+                <span class="toggle-track" :class="{ on: rollMode }"><span class="toggle-thumb"></span></span>
+              </span>
+            </label>
+
+            <!-- D2 摇一摇开关 -->
+            <label class="toggle-row" for="shake-toggle" style="cursor:default">
+              <span class="toggle-label">📳 摇一摇触发摇号</span>
+              <button id="shake-toggle" class="shake-toggle-btn" :class="{ active: shakeEnabled }"
+                @click="shakeEnabled ? disableShake() : enableShake()">
+                {{ shakeEnabled ? '已开启' : '开启' }}
+              </button>
+            </label>
+            <Transition name="tip-fade">
+              <p v-if="shakeHint === 'granted'"          class="shake-hint success">✅ 摇一摇已开启</p>
+              <p v-else-if="shakeHint === 'denied'"      class="shake-hint warn">⚠️ 权限被拒绝，请在系统设置中允许</p>
+              <p v-else-if="shakeHint === 'unsupported'" class="shake-hint warn">⚠️ 当前设备不支持此功能</p>
+            </Transition>
+
+            <p class="input-hint" style="margin-top:4px">1 ~ 10 注 | 更多筛选见"号码筛选"</p>
+          </div>
+        </div>
+
       </section>
 
       <!-- 结果区域 -->
@@ -495,33 +559,51 @@ function matchClass({ redMatch, blueMatch }) {
 
         <!-- C2 历史开奖对比 -->
         <div v-if="shook && results.length > 0 && compareLoaded" class="compare-section">
-          <p class="compare-title">📊 与近期开奖对比</p>
-          <div class="compare-scroll">
-            <table class="compare-table">
-              <thead>
-                <tr>
-                  <th>期号</th>
-                  <th v-for="(row, idx) in results.filter(r => r.revealed)" :key="idx">第{{ row.index }}注</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="draw in recentDraws" :key="draw.code">
-                  <td class="draw-code-cell">{{ draw.code }}<br><small>{{ draw.date }}</small></td>
-                  <td v-for="(row, idx) in results.filter(r => r.revealed)" :key="idx" class="match-cell">
-                    <span
-                      class="match-badge"
-                      :class="matchClass(matchCount(row, draw))">
-                      <span class="match-red">红{{ matchCount(row, draw).redMatch }}</span>+<span class="match-blue">蓝{{ matchCount(row, draw).blueMatch }}</span>
-                    </span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="compare-title-row">
+            <p class="compare-title">📊 与近期开奖对比</p>
+            <span class="compare-sub">对号颜色越深 = 匹配越多</span>
           </div>
-          <p class="compare-hint">对比最近 {{ recentDraws.length }} 期开奖号码 · 仅供参考</p>
+
+          <!-- 每一期单独一块，纵向排列 -->
+          <div v-for="draw in recentDraws" :key="draw.code" class="compare-draw-block">
+            <!-- 期号行 -->
+            <div class="compare-draw-head">
+              <span class="compare-draw-code">第 {{ draw.code }} 期</span>
+              <span class="compare-draw-date">{{ draw.date }}</span>
+              <!-- 开奖号 -->
+              <div class="compare-draw-balls">
+                <span v-for="r in draw.reds" :key="r" class="cmp-ball cmp-red">{{ r }}</span>
+                <span class="cmp-ball cmp-blue">{{ draw.blue }}</span>
+              </div>
+            </div>
+
+            <!-- 每注对比行 -->
+            <div v-for="(row, idx) in results.filter(r => r.revealed)" :key="idx" class="compare-row-item">
+              <span class="compare-row-label">第{{ row.index }}注</span>
+              <div class="compare-balls-wrap">
+                <!-- 红球：命中高亮 -->
+                <span
+                  v-for="(r, bi) in row.reds" :key="bi"
+                  class="cmp-ball cmp-red"
+                  :class="{ 'cmp-hit': draw.reds.includes(formatBall(r)) }"
+                >{{ formatBall(r) }}</span>
+                <!-- 蓝球：命中高亮 -->
+                <span
+                  class="cmp-ball cmp-blue"
+                  :class="{ 'cmp-hit-blue': formatBall(row.blue) === draw.blue }"
+                >{{ formatBall(row.blue) }}</span>
+              </div>
+              <!-- 奖级徽章 -->
+              <span class="prize-tag" :class="prizeLabel(matchCount(row, draw)).cls">
+                {{ prizeLabel(matchCount(row, draw)).text }}
+              </span>
+            </div>
+          </div>
+
+          <p class="compare-hint">以上为历史 {{ recentDraws.length }} 期开奖 · 仅供娱乐参考，不构成购彩建议</p>
         </div>
         <div v-else-if="shook && compareLoading" class="compare-loading">
-          <p class="state-text">正在加载历史开奖...</p>
+          <p class="state-text">正在对比历史开奖...</p>
         </div>
       </section>
     </template>
@@ -569,7 +651,10 @@ function matchClass({ redMatch, blueMatch }) {
 
         <!-- A4 连号过滤 -->
         <div class="settings-section-title" style="margin-top:14px">
-          <span>🔗 连号过滤</span>
+          <span style="display:flex;align-items:center;gap:5px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 4a1 1 0 0 1 1-1h16a1 1 0 0 1 .77 1.64L14 12.59V19a1 1 0 0 1-.45.832l-4 2.667A1 1 0 0 1 8 21.6V12.59L3.23 5.64A1 1 0 0 1 3 4z"/></svg>
+            连号过滤
+          </span>
         </div>
         <label class="toggle-row" for="no-consecutive">
           <span class="toggle-label">不生成含连续号码的结果</span>
@@ -589,7 +674,12 @@ function matchClass({ redMatch, blueMatch }) {
       <section class="history-tab-card">
         <div class="result-header">
           <p class="result-title">📋 摇号历史</p>
-          <button v-if="shakeHistory.length" class="copy-btn danger-btn" @click="clearHistory">清空</button>
+          <button v-if="shakeHistory.length"
+            class="copy-btn danger-btn"
+            :class="{ 'confirm-active': confirmingClear }"
+            @click="clearHistory">
+            {{ confirmingClear ? '再点确认清空' : '清空' }}
+          </button>
         </div>
 
         <p v-if="!shakeHistory.length" class="state-text">暂无记录，摇号后自动保存</p>
@@ -648,8 +738,8 @@ function matchClass({ redMatch, blueMatch }) {
 
 /* ══ Rule card ══ */
 .rule-card { background: rgba(255,255,255,.9); border: 1px solid #ffe0c0; border-radius: 14px; padding: 10px 14px; }
-.rule-text { margin:0; font-size:13px; color:#4a3020; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-.rule-badge { display:inline-block; padding:2px 9px; border-radius:999px; font-size:12px; font-weight:700; color:#fff; }
+.rule-text { margin:0; font-size:14px; color:#4a3020; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.rule-badge { display:inline-block; padding:3px 10px; border-radius:999px; font-size:13px; font-weight:700; color:#fff; }
 .red-badge  { background: linear-gradient(180deg,#ff7272 0%,#e03636 100%); }
 .blue-badge { background: linear-gradient(180deg,#6aa5ff 0%,#2a67d8 100%); }
 
@@ -662,34 +752,184 @@ function matchClass({ redMatch, blueMatch }) {
   padding: 5px;
 }
 .tab-btn {
-  flex: 1; padding: 8px 4px; border: none; border-radius: 10px;
-  background: transparent; font-size: 12px; font-weight: 600; color: #a08060;
+  flex: 1; padding: 9px 4px; border: none; border-radius: 10px;
+  background: transparent; font-size: 13px; font-weight: 600; color: #a08060;
   cursor: pointer; transition: all .18s; white-space: nowrap;
 }
 .tab-btn.active { background: linear-gradient(135deg,#f06000,#f5a623); color: #fff; box-shadow: 0 3px 10px rgba(240,96,0,.28); }
 
-/* ══ Input card ══ */
+/* ══ Input card（squeeze 挤压动效版）══ */
 .input-card {
-  background: rgba(255,255,255,.88); border: 1px solid #ffe0c0; border-radius: 16px;
-  padding: 18px 16px; display: flex; flex-direction: column; align-items: center; gap: 10px;
+  background: rgba(255,255,255,.88);
+  border: 1px solid #ffe0c0;
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
   box-shadow: 0 6px 20px rgba(240,96,0,.08);
+  /* 卡片整体：padding/border/shadow 平滑过渡 */
+  transition:
+    padding       0.45s cubic-bezier(0.33, 1, 0.68, 1),
+    border-color  0.45s cubic-bezier(0.33, 1, 0.68, 1),
+    box-shadow    0.45s cubic-bezier(0.33, 1, 0.68, 1);
+  overflow: hidden;
+  will-change: transform;
 }
-.input-label { font-size:15px; font-weight:700; color:#3a2010; }
-.input-row   { display:flex; align-items:center; gap:12px; }
-.qty-btn {
-  display:grid; place-items:center; width:44px; height:44px; border-radius:50%;
-  border:2px solid #f06000; background:#fff; color:#f06000; font-size:22px; font-weight:700;
-  cursor:pointer; transition:all .15s; padding:0;
+.input-card.compact {
+  padding: 8px 12px;
+  border-color: #f5a623;
+  box-shadow: 0 3px 12px rgba(240,96,0,.18);
 }
-.qty-btn:active { background:#f06000; color:#fff; transform:scale(.93); }
-.qty-input {
-  width:90px; height:52px; text-align:center; font-size:28px; font-weight:700; color:#2a1800;
-  border:2px solid #f5c080; border-radius:12px; background:#fffaf5; outline:none; -moz-appearance:textfield;
+
+/* ── 控制条（始终可见） ── */
+.ctrl-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
 }
-.qty-input::-webkit-outer-spin-button,
-.qty-input::-webkit-inner-spin-button { -webkit-appearance:none; }
-.qty-input:focus { border-color:#f06000; box-shadow:0 0 0 3px rgba(240,96,0,.14); }
-.input-hint { margin:0; font-size:12px; color:#b07040; }
+
+/* 注数步进器 */
+.qty-stepper {
+  display: flex; align-items: center; gap: 4px;
+  background: #fff5e8; border: 1.5px solid #f5c080; border-radius: 999px;
+  padding: 2px 6px;
+  transition: padding 0.4s cubic-bezier(0.33, 1, 0.68, 1);
+  flex-shrink: 0;
+}
+.qty-mini-btn {
+  width: 28px; height: 28px; border-radius: 50%;
+  border: none; background: transparent; color: #f06000;
+  font-size: 20px; font-weight: 700; cursor: pointer; padding: 0;
+  display: grid; place-items: center; line-height: 1;
+  transition: background .15s;
+}
+.qty-mini-btn:active { background: rgba(240,96,0,.15); }
+.qty-display {
+  min-width: 32px; text-align: center;
+  font-size: 20px; font-weight: 800; color: #2a1800; line-height: 1;
+  transition: font-size 0.4s cubic-bezier(0.33, 1, 0.68, 1);
+}
+.qty-display small { font-size: 11px; font-weight: 600; color: #b07040; margin-left: 1px; }
+
+/* compact 态步进器微缩 */
+.input-card.compact .qty-stepper { padding: 2px 4px; }
+.input-card.compact .qty-display  { font-size: 17px; }
+
+/* 模式图标 chip —— 弹性淡入 */
+.mode-chips {
+  display: flex; align-items: center; gap: 4px;
+  flex: 1;
+  opacity: 0;
+  transform: scale(0.7) translateX(-6px);
+  pointer-events: none;
+  transition:
+    opacity   0.38s cubic-bezier(0.34, 1.4, 0.64, 1),
+    transform 0.38s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+.input-card.compact .mode-chips {
+  opacity: 1;
+  transform: scale(1) translateX(0);
+  pointer-events: auto;
+}
+.mode-chip {
+  width: 30px; height: 30px; border-radius: 8px; border: 1.5px solid #e8d8c0;
+  background: #fff8f0; font-size: 14px; cursor: pointer;
+  display: grid; place-items: center; padding: 0;
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+}
+.mode-chip.mc-on     { background: #fff0d0; border-color: #f5a623; box-shadow: 0 0 0 2px rgba(245,166,35,.3); }
+.mode-chip.mc-filter { background: #edfff3; border-color: #3aaa60; }
+.mode-chip:active    { transform: scale(.85); }
+
+/* 摇号按钮 */
+.ctrl-shake-btn {
+  flex: 1;
+  height: 40px;
+  border: none; border-radius: 999px;
+  background: linear-gradient(135deg, #f06000, #f5a623);
+  color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 14px rgba(240,96,0,.3);
+  white-space: nowrap; overflow: hidden;
+  transition:
+    flex       0.42s cubic-bezier(0.33, 1, 0.68, 1),
+    padding    0.42s cubic-bezier(0.33, 1, 0.68, 1),
+    font-size  0.42s cubic-bezier(0.33, 1, 0.68, 1),
+    background 0.3s ease,
+    opacity    0.25s ease;
+}
+.ctrl-shake-btn:disabled { opacity: .6; cursor: not-allowed; }
+.ctrl-shake-btn.loading  { background: linear-gradient(135deg, #c0a060, #e0c090); }
+.ctrl-shake-btn:active:not(:disabled) { transform: scale(.96); }
+.countdown-num-sm { font-size: 20px; font-weight: 900; line-height: 1; }
+
+/* compact 态按钮收窄 */
+.input-card.compact .ctrl-shake-btn {
+  flex: 0 0 auto;
+  padding: 0 16px;
+  font-size: 14px;
+}
+
+/* 展开收起箭头 */
+.chevron-btn {
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 1.5px solid #f0d0a0; background: #fff8f0;
+  cursor: pointer; display: grid; place-items: center; padding: 0;
+  flex-shrink: 0;
+  transition: background 0.2s, border-color 0.2s;
+}
+.chevron-btn:active { background: #f5a623; border-color: #f5a623; }
+.chevron-icon {
+  font-size: 18px; color: #b07040; display: block; line-height: 1;
+  transition: transform 0.42s cubic-bezier(0.33, 1, 0.68, 1);
+  /* 初始展开态 = 向下 */
+  transform: rotate(0deg);
+}
+/* compact 时箭头翻转 */
+.input-card.compact .chevron-icon { transform: rotate(180deg); }
+
+/* ──────────────────────────────────────────────
+   可折叠设置体：核心"挤压"动效
+   grid-template-rows: 0fr → 1fr  控制高度收缩
+   scaleY: 1 → 0.3  + transform-origin: top center  营造被压扁/弹开感
+   ────────────────────────────────────────────── */
+.ctrl-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  margin-top: 12px;
+  will-change: grid-template-rows, margin-top;
+  transition:
+    grid-template-rows 0.46s cubic-bezier(0.33, 1, 0.68, 1),
+    margin-top         0.40s cubic-bezier(0.33, 1, 0.68, 1);
+}
+.input-card.compact .ctrl-body {
+  grid-template-rows: 0fr;
+  margin-top: 0;
+}
+
+/* inner：被"压扁"的可见层 */
+.ctrl-body-inner {
+  overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding-bottom: 4px;
+  transform-origin: top center;
+  will-change: transform, opacity;
+  transition:
+    transform 0.46s cubic-bezier(0.33, 1, 0.68, 1),
+    opacity   0.36s cubic-bezier(0.33, 1, 0.68, 1);
+  transform: scaleY(1);
+  opacity: 1;
+}
+/* compact 时内容被垂直压扁到 20% + 淡出 */
+.input-card.compact .ctrl-body-inner {
+  transform: scaleY(0.2);
+  opacity: 0;
+}
+
+.input-label { font-size: 16px; font-weight: 700; color: #3a2010; }
+.input-hint  { margin: 0; font-size: 12px; color: #b07040; }
 
 /* ══ 筛选摘要 ══ */
 .filter-summary {
@@ -761,7 +1001,7 @@ function matchClass({ redMatch, blueMatch }) {
   padding:14px 12px; box-shadow:0 6px 20px rgba(240,96,0,.08);
 }
 .result-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; min-height:28px; }
-.result-title  { margin:0; font-size:15px; font-weight:700; color:#3a2010; }
+.result-title  { margin:0; font-size:16px; font-weight:700; color:#3a2010; }
 .copy-btn { font-size:12px; padding:5px 12px; border-radius:999px; border:1px solid #f5a623; background:#fff8f0; color:#a06020; cursor:pointer; transition:all .15s; }
 .copy-btn:active { background:#f5a623; color:#fff; }
 .copy-toast { font-size:12px; color:#1a8040; font-weight:600; }
@@ -775,7 +1015,7 @@ function matchClass({ redMatch, blueMatch }) {
   flex-wrap:wrap; position:relative;
 }
 .result-row.rolling { border-color:#f5a623; background:linear-gradient(180deg,#fffbe8,#fff5d5); }
-.row-index { font-size:12px; font-weight:700; color:#b07040; white-space:nowrap; min-width:46px; }
+.row-index { font-size:14px; font-weight:700; color:#b07040; white-space:nowrap; min-width:46px; }
 
 /* ══ D1 球动效 ══ */
 .ball-rolling { animation:ball-roll .45s ease infinite alternate; filter:blur(.5px); opacity:.85; }
@@ -793,25 +1033,95 @@ function matchClass({ redMatch, blueMatch }) {
 }
 .reshake-btn:active { transform:rotate(180deg) scale(.9); background:#f5a623; border-color:#f5a623; }
 
-/* ══ C2 对比 ══ */
+/* ══ 折叠条 ══ */
+.collapsed-bar {
+  background: rgba(255,255,255,.92);
+  border: 1.5px solid #f5a623;
+  border-radius: 14px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(240,96,0,.12);
+  transition: box-shadow .18s;
+}
+.collapsed-bar:active { box-shadow: 0 2px 6px rgba(240,96,0,.1); }
+.collapsed-left  { display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0; }
+.collapsed-count { font-size:18px; font-weight:800; color:#f06000; white-space:nowrap; }
+.collapsed-actions { display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex-shrink:0; }
+.collapsed-reshake {
+  font-size:13px; padding:6px 14px; border-radius:999px; border:none;
+  background:linear-gradient(135deg,#f06000,#f5a623); color:#fff; font-weight:700;
+  cursor:pointer; white-space:nowrap; box-shadow:0 3px 10px rgba(240,96,0,.3);
+}
+.collapsed-expand { font-size:11px; color:#b07040; }
+
+/* ══ C2 对比（新式纵向布局）══ */
 .compare-section { margin-top:14px; border-top:1px dashed #f0c090; padding-top:12px; }
-.compare-title   { margin:0 0 8px; font-size:13px; font-weight:700; color:#6a4020; }
-.compare-scroll  { overflow-x:auto; }
-.compare-table   { width:100%; border-collapse:collapse; font-size:11px; }
-.compare-table th,
-.compare-table td { padding:5px 6px; text-align:center; border-bottom:1px solid #f5e8d0; white-space:nowrap; }
-.compare-table th { color:#8a6040; font-weight:600; background:#fff8f0; }
-.draw-code-cell  { font-size:11px; color:#8a6040; }
-.draw-code-cell small { display:block; color:#b09070; font-size:10px; }
-.match-badge { display:inline-flex; align-items:center; gap:2px; padding:2px 6px; border-radius:999px; font-weight:700; font-size:10px; }
-.match-red  { color:#e03636; }
-.match-blue { color:#2a67d8; }
-.match-jackpot { background:#fff0a0; }
-.match-high    { background:#ffe0c0; }
-.match-mid     { background:#f0f0f0; }
-.match-low     { background:#f8f8f8; color:#808080; }
-.match-none    { color:#ccc; }
-.compare-hint  { margin:6px 0 0; font-size:10px; color:#b09070; text-align:center; }
+.compare-title-row { display:flex; align-items:baseline; gap:8px; margin-bottom:10px; }
+.compare-title     { margin:0; font-size:15px; font-weight:700; color:#6a4020; }
+.compare-sub       { font-size:11px; color:#b09070; }
+
+.compare-draw-block {
+  border: 1px solid #f0d8b0;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 10px;
+  background: #fffcf5;
+}
+.compare-draw-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  background: linear-gradient(135deg,#fef3e0,#fff8ec);
+  border-bottom: 1px solid #f0d8b0;
+}
+.compare-draw-code { font-size:13px; font-weight:800; color:#7a4020; white-space:nowrap; }
+.compare-draw-date { font-size:11px; color:#b09070; white-space:nowrap; }
+.compare-draw-balls { display:flex; align-items:center; gap:4px; flex-wrap:wrap; margin-left:auto; }
+
+.compare-row-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-top: 1px solid #f5eedd;
+  flex-wrap: wrap;
+}
+.compare-row-label { font-size:12px; font-weight:700; color:#b07040; min-width:38px; white-space:nowrap; }
+.compare-balls-wrap { display:flex; align-items:center; gap:4px; flex-wrap:wrap; flex:1; }
+
+/* 对比专用小球 */
+.cmp-ball {
+  display:inline-grid; place-items:center;
+  width:26px; height:26px; border-radius:50%;
+  font-size:11px; font-weight:700; color:#fff;
+  opacity:.35;  /* 未命中：半透明 */
+}
+.cmp-red  { background:linear-gradient(180deg,#ff8888,#e03636); }
+.cmp-blue { background:linear-gradient(180deg,#78b0ff,#2a67d8); }
+/* 命中时还原不透明 + 发光 */
+.cmp-hit      { opacity:1; box-shadow:0 0 0 2px #fff, 0 0 0 4px #e03636; }
+.cmp-hit-blue { opacity:1; box-shadow:0 0 0 2px #fff, 0 0 0 4px #2a67d8; }
+
+/* 奖级 Tag */
+.prize-tag {
+  flex-shrink:0; font-size:11px; font-weight:700; padding:2px 8px;
+  border-radius:999px; margin-left:auto; white-space:nowrap;
+}
+.prize-1 { background:#ffe000; color:#7a4000; }
+.prize-2 { background:#ffb300; color:#fff; }
+.prize-3 { background:#ff7043; color:#fff; }
+.prize-4 { background:#ef5350; color:#fff; }
+.prize-5 { background:#e0e0e0; color:#555; }
+.prize-6 { background:#f5f5f5; color:#888; }
+.prize-none { background:transparent; color:#ccc; font-weight:400; }
+
+.compare-hint { margin:4px 0 0; font-size:10px; color:#b09070; text-align:center; }
 .compare-loading { padding:12px 0; }
 
 /* ══ 号码筛选 Tab ══ */
