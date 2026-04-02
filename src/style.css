@@ -47,11 +47,22 @@ a {
   min-height: 100dvh;
 }
 
-.home-header,
-.history-header {
+.home-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  background: linear-gradient(135deg, #2f5fe7 0%, #2e8af7 100%);
+  border-radius: 16px;
+  padding: 14px 12px;
+  color: #ffffff;
+  box-shadow: 0 8px 20px rgba(47, 95, 231, 0.26);
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   gap: 12px;
   background: linear-gradient(135deg, #2f5fe7 0%, #2e8af7 100%);
   border-radius: 16px;
@@ -257,7 +268,7 @@ a {
 .back-top-btn {
   position: fixed;
   right: 20px;
-  bottom: 28px;
+  bottom: calc(70px + env(safe-area-inset-bottom, 0px));
   z-index: 100;
   display: grid;
   place-items: center;

@@ -1,6 +1,5 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
 import { fetchHistoryDraws } from '../api/ssq'
 
 const loading = ref(false)
@@ -135,9 +134,8 @@ onUnmounted(() => {
 <template>
   <main class="page history-page">
     <header class="history-header">
-      <RouterLink class="back-link" to="/">返回首页</RouterLink>
       <div class="history-title-block">
-        <h1 class="page-title">历史开奖</h1>
+        <h1 class="page-title">📅 历史开奖</h1>
         <span class="total-text">共 {{ total || 0 }} 条</span>
       </div>
     </header>

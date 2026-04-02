@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import HistoryView from '../views/HistoryView.vue'
+import LuckyView from '../views/LuckyView.vue'
 
 const DEFAULT_TITLE = '双色球预测 - 多策略智能分析与历史开奖查询'
 
@@ -23,6 +24,15 @@ const router = createRouter({
       meta: {
         title: '历史开奖查询 - 双色球预测',
         description: '查询双色球历史开奖号码、奖级详情、销售额与奖池数据。',
+      },
+    },
+    {
+      path: '/lucky',
+      name: 'lucky',
+      component: LuckyView,
+      meta: {
+        title: '随机摇号 - 双色球预测',
+        description: '按双色球规则随机生成号码，支持自定义注数，前端本地摇号。',
       },
     },
   ],

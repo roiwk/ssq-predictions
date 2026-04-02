@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
 import { fetchPredictionResult } from '../api/ssq'
 
 const loading = ref(false)
@@ -60,10 +59,9 @@ onMounted(loadPredictions)
   <main class="page home-page">
     <header class="home-header">
       <div>
-        <h1 class="page-title">双色球预测</h1>
+        <h1 class="page-title">🎯 双色球预测</h1>
         <p class="page-subtitle">多策略结果一览</p>
       </div>
-      <RouterLink class="history-link" to="/history">历史开奖</RouterLink>
     </header>
 
     <section class="meta-row">
