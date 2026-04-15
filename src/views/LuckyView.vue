@@ -12,9 +12,20 @@ const shook           = ref(false)
 const inputCollapsed  = ref(false)    // 摇完后折叠输入区
 
 // ══════════════════════════════════════════
-//  Tab 控制：'shake' | 'settings' | 'history'
+//  Tab 控制：'shake' | 'compound' | 'settings' | 'history'
 // ══════════════════════════════════════════
 const activeTab = ref('shake')
+
+// ══════════════════════════════════════════
+//  复式摇号
+// ══════════════════════════════════════════
+const compoundRedCount  = ref(7)   // 选几个红球 6~20
+const compoundBlueCount = ref(1)   // 选几个蓝球 1~16
+const compoundReds      = ref([])  // 选中的红球
+const compoundBlues     = ref([])  // 选中的蓝球
+const compoundPhase     = ref('idle')  // 'idle' | 'rolling' | 'done'
+const compoundMode      = ref('auto') // 'auto' | 'manual'
+const compoundCopyToast = ref(false)
 
 // ══════════════════════════════════════════
 //  D4 倒计时搅机模式
@@ -359,6 +370,117 @@ function copyAll() {
 }
 
 // ══════════════════════════════════════════
+//  复式摇号逻辑
+// ══════════════════════════════════════════
+/** 阶乘（用于组合数计算的辅助） */
+function factorial(n) {
+  if (n <= 1) return 1
+  let r = 1
+  for (let i = 2; i <= n; i++) r *= i
+  return r
+}
+
+/** 组合数 C(n, k) */
+function comb(n, k) {
+  if (k > n || k < 0) return 0
+  if (k === 0 || k === n) return 1
+  // 使用约分避免溢出
+  let result = 1
+  for (let i = 0; i < k; i++) {
+    result = result * (n - i) / (i + 1)
+  }
+  return Math.round(result)
+}
+
+/** 复式注数 = C(redCount, 6) × C(blueCount, 1) */
+const compoundBetCount = computed(() => {
+  return comb(compoundReds.value.length, 6) * comb(compoundBlues.value.length, 1)
+})
+
+/** 复式金额 = 注数 × 2 */
+const compoundCost = computed(() => compoundBetCount.value * 2)
+
+/** 手动选择/取消红球 */
+function toggleCompoundRed(n) {
+  const idx = compoundReds.value.indexOf(n)
+  if (idx >= 0) {
+    compoundReds.value.splice(idx, 1)
+  } else if (compoundReds.value.length < compoundRedCount.value) {
+    compoundReds.value.push(n)
+    compoundReds.value.sort((a, b) => a - b)
+  }
+}
+
+/** 手动选择/取消蓝球 */
+function toggleCompoundBlue(n) {
+  const idx = compoundBlues.value.indexOf(n)
+  if (idx >= 0) {
+    compoundBlues.value.splice(idx, 1)
+  } else if (compoundBlues.value.length < compoundBlueCount.value) {
+    compoundBlues.value.push(n)
+    compoundBlues.value.sort((a, b) => a - b)
+  }
+}
+
+/** 自动随机选择复式号码 */
+async function doCompoundShake() {
+  if (compoundPhase.value === 'rolling') return
+  compoundPhase.value = 'rolling'
+  compoundReds.value = []
+  compoundBlues.value = []
+  await nextTick()
+  await new Promise(r => setTimeout(r, 300))
+
+  // 随机选 N 个红球
+  const redPool = Array.from({ length: 33 }, (_, i) => i + 1)
+  const pickedReds = pickRandom(redPool, compoundRedCount.value).sort((a, b) => a - b)
+  compoundReds.value = pickedReds
+
+  await new Promise(r => setTimeout(r, 200))
+
+  // 随机选 M 个蓝球
+  const bluePool = Array.from({ length: 16 }, (_, i) => i + 1)
+  const pickedBlues = pickRandom(bluePool, compoundBlueCount.value).sort((a, b) => a - b)
+  compoundBlues.value = pickedBlues
+
+  compoundPhase.value = 'done'
+}
+
+/** 清空复式选择 */
+function clearCompound() {
+  compoundReds.value = []
+  compoundBlues.value = []
+  compoundPhase.value = 'idle'
+}
+
+/** 复制复式结果 */
+function copyCompound() {
+  if (!compoundReds.value.length && !compoundBlues.value.length) return
+  const redText = compoundReds.value.map(formatBall).join(' ')
+  const blueText = compoundBlues.value.map(formatBall).join(' ')
+  const text = `复式 ${compoundReds.value.length}+${compoundBlues.value.length}\n红球: ${redText}\n蓝球: ${blueText}\n共 ${compoundBetCount.value} 注 / ¥${compoundCost.value}`
+  navigator.clipboard?.writeText(text).catch(() => {})
+  compoundCopyToast.value = true
+  setTimeout(() => { compoundCopyToast.value = false }, 1800)
+}
+
+/** 调整 N 红球数时自动裁剪已选 */
+function setCompoundRedCount(val) {
+  compoundRedCount.value = Math.max(6, Math.min(20, val))
+  if (compoundReds.value.length > compoundRedCount.value) {
+    compoundReds.value = compoundReds.value.slice(0, compoundRedCount.value)
+  }
+}
+
+/** 调整 M 蓝球数时自动裁剪已选 */
+function setCompoundBlueCount(val) {
+  compoundBlueCount.value = Math.max(1, Math.min(16, val))
+  if (compoundBlues.value.length > compoundBlueCount.value) {
+    compoundBlues.value = compoundBlues.value.slice(0, compoundBlueCount.value)
+  }
+}
+
+// ══════════════════════════════════════════
 //  生命周期
 // ══════════════════════════════════════════
 onMounted(() => {
@@ -420,9 +542,10 @@ function matchClass({ redMatch, blueMatch }) {
 
     <!-- ████ Tab 导航 ████ -->
     <div class="tab-bar">
-      <button class="tab-btn" :class="{ active: activeTab === 'shake' }"   @click="activeTab = 'shake'">🎰 摇号</button>
-      <button class="tab-btn" :class="{ active: activeTab === 'settings' }" @click="activeTab = 'settings'">⚙️ 号码筛选</button>
-      <button class="tab-btn" :class="{ active: activeTab === 'history' }"  @click="activeTab = 'history'">📋 历史记录</button>
+      <button class="tab-btn" :class="{ active: activeTab === 'shake' }"    @click="activeTab = 'shake'">🎰 单式</button>
+      <button class="tab-btn" :class="{ active: activeTab === 'compound' }" @click="activeTab = 'compound'">🎯 复式</button>
+      <button class="tab-btn" :class="{ active: activeTab === 'settings' }" @click="activeTab = 'settings'">⚙️ 筛选</button>
+      <button class="tab-btn" :class="{ active: activeTab === 'history' }"  @click="activeTab = 'history'">📋 历史</button>
     </div>
 
     <!-- ████ 摇号 Tab ████ -->
@@ -605,6 +728,139 @@ function matchClass({ redMatch, blueMatch }) {
         <div v-else-if="shook && compareLoading" class="compare-loading">
           <p class="state-text">正在对比历史开奖...</p>
         </div>
+      </section>
+    </template>
+
+    <!-- ████ 复式摇号 Tab ████ -->
+    <template v-if="activeTab === 'compound'">
+      <section class="compound-card">
+        <!-- 标题与模式切换 -->
+        <div class="compound-header">
+          <h2 class="compound-title">🎯 复式选号</h2>
+          <div class="compound-mode-switch">
+            <button class="cmode-btn" :class="{ active: compoundMode === 'auto' }"  @click="compoundMode = 'auto'">随机</button>
+            <button class="cmode-btn" :class="{ active: compoundMode === 'manual' }" @click="compoundMode = 'manual'">手选</button>
+          </div>
+        </div>
+
+        <!-- N+M 步进器 -->
+        <div class="compound-steppers">
+          <div class="compound-stepper">
+            <span class="cs-label"><span class="rule-badge red-badge">红球</span></span>
+            <div class="cs-ctrl">
+              <button class="cs-btn" @click="setCompoundRedCount(compoundRedCount - 1)" :disabled="compoundRedCount <= 6">−</button>
+              <span class="cs-value">{{ compoundRedCount }}</span>
+              <button class="cs-btn" @click="setCompoundRedCount(compoundRedCount + 1)" :disabled="compoundRedCount >= 20">+</button>
+            </div>
+            <span class="cs-range">6~20</span>
+          </div>
+          <div class="compound-stepper">
+            <span class="cs-label"><span class="rule-badge blue-badge">蓝球</span></span>
+            <div class="cs-ctrl">
+              <button class="cs-btn" @click="setCompoundBlueCount(compoundBlueCount - 1)" :disabled="compoundBlueCount <= 1">−</button>
+              <span class="cs-value">{{ compoundBlueCount }}</span>
+              <button class="cs-btn" @click="setCompoundBlueCount(compoundBlueCount + 1)" :disabled="compoundBlueCount >= 16">+</button>
+            </div>
+            <span class="cs-range">1~16</span>
+          </div>
+        </div>
+
+        <!-- 手选模式：球选择面板 -->
+        <template v-if="compoundMode === 'manual'">
+          <div class="compound-pick-section">
+            <p class="compound-pick-label">选 <strong>{{ compoundRedCount }}</strong> 个红球（已选 {{ compoundReds.length }}）</p>
+            <div class="ball-picker">
+              <button
+                v-for="n in 33" :key="n"
+                class="pick-ball"
+                :class="{
+                  'pick-normal': !compoundReds.includes(n),
+                  'pick-compound-selected': compoundReds.includes(n),
+                  'pick-compound-full': !compoundReds.includes(n) && compoundReds.length >= compoundRedCount,
+                }"
+                @click="toggleCompoundRed(n)"
+              >{{ formatBall(n) }}</button>
+            </div>
+          </div>
+
+          <div class="compound-pick-section">
+            <p class="compound-pick-label">选 <strong>{{ compoundBlueCount }}</strong> 个蓝球（已选 {{ compoundBlues.length }}）</p>
+            <div class="ball-picker">
+              <button
+                v-for="n in 16" :key="n"
+                class="pick-ball pick-blue-ball"
+                :class="{
+                  'pick-normal-blue': !compoundBlues.includes(n),
+                  'pick-compound-blue-selected': compoundBlues.includes(n),
+                  'pick-compound-full': !compoundBlues.includes(n) && compoundBlues.length >= compoundBlueCount,
+                }"
+                @click="toggleCompoundBlue(n)"
+              >{{ formatBall(n) }}</button>
+            </div>
+          </div>
+        </template>
+
+        <!-- 自动模式：摇号按钮 -->
+        <template v-if="compoundMode === 'auto'">
+          <button
+            class="compound-shake-btn"
+            :class="{ loading: compoundPhase === 'rolling' }"
+            :disabled="compoundPhase === 'rolling'"
+            @click="doCompoundShake"
+          >
+            <span v-if="compoundPhase === 'rolling'">🎰 摇号中...</span>
+            <span v-else>🎉 随机 {{ compoundRedCount }}+{{ compoundBlueCount }} 复式</span>
+          </button>
+        </template>
+
+        <!-- 结果展示 -->
+        <div v-if="compoundReds.length || compoundBlues.length" class="compound-result">
+          <div class="compound-result-header">
+            <span class="compound-result-tag">复式 {{ compoundReds.length }}+{{ compoundBlues.length }}</span>
+            <Transition name="tip-fade">
+              <span v-if="compoundCopyToast" class="copy-toast">✅ 已复制</span>
+              <button v-else class="copy-btn" @click="copyCompound">复制</button>
+            </Transition>
+          </div>
+
+          <!-- 选中的红球 -->
+          <div class="compound-balls-display">
+            <div class="ball-group">
+              <span v-for="r in compoundReds" :key="r" class="ball red ball-fly-in"
+                :style="{ animationDelay: `${compoundReds.indexOf(r) * 40}ms` }"
+              >{{ formatBall(r) }}</span>
+            </div>
+            <div class="compound-blue-group">
+              <span v-for="b in compoundBlues" :key="b" class="ball blue ball-fly-in"
+                :style="{ animationDelay: `${(compoundReds.length + compoundBlues.indexOf(b)) * 40}ms` }"
+              >{{ formatBall(b) }}</span>
+            </div>
+          </div>
+
+          <!-- 注数与金额 -->
+          <div class="compound-stats">
+            <div class="compound-stat-item">
+              <span class="csi-label">注数</span>
+              <span class="csi-value">{{ compoundBetCount.toLocaleString() }} <small>注</small></span>
+            </div>
+            <div class="compound-stat-divider"></div>
+            <div class="compound-stat-item">
+              <span class="csi-label">金额</span>
+              <span class="csi-value csi-price">¥{{ compoundCost.toLocaleString() }}</span>
+            </div>
+          </div>
+
+          <button class="compound-clear-btn" @click="clearCompound">🗑 清空重选</button>
+        </div>
+
+        <!-- 空状态提示 -->
+        <div v-else-if="compoundMode === 'manual'" class="compound-empty">
+          <p>👆 请在上方选择号码</p>
+        </div>
+
+        <p class="compound-formula-hint">
+          组合公式：C({{ compoundRedCount }},6) × C({{ compoundBlueCount }},1) = {{ comb(compoundRedCount, 6) * comb(compoundBlueCount, 1) }} 注
+        </p>
       </section>
     </template>
 
@@ -1207,4 +1463,309 @@ function matchClass({ redMatch, blueMatch }) {
 .disclaimer strong { color:#c04040; }
 
 .state-text { margin:12px 0; text-align:center; font-size:14px; color:#a08060; }
+
+/* ══ 复式摇号 Tab ══ */
+.compound-card {
+  background: rgba(255,255,255,.88);
+  border: 1px solid #ffe0c0;
+  border-radius: 16px;
+  padding: 16px 14px;
+  box-shadow: 0 6px 20px rgba(240,96,0,.08);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* 标题行 */
+.compound-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.compound-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: #3a2010;
+}
+
+/* 随机/手选 模式切换 */
+.compound-mode-switch {
+  display: flex;
+  gap: 0;
+  background: #f5ece0;
+  border-radius: 999px;
+  padding: 3px;
+}
+.cmode-btn {
+  padding: 5px 14px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 700;
+  color: #a08060;
+  cursor: pointer;
+  transition: all .2s;
+}
+.cmode-btn.active {
+  background: linear-gradient(135deg, #f06000, #f5a623);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(240,96,0,.25);
+}
+
+/* N+M 步进器 */
+.compound-steppers {
+  display: flex;
+  gap: 12px;
+}
+.compound-stepper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: linear-gradient(180deg, #fff, #fff8f0);
+  border: 1.5px solid #f0d8b0;
+  border-radius: 14px;
+}
+.cs-label {
+  flex-shrink: 0;
+}
+.cs-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  justify-content: center;
+}
+.cs-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1.5px solid #e0d0b8;
+  background: #fff;
+  color: #f06000;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  line-height: 1;
+  transition: all .15s;
+}
+.cs-btn:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+}
+.cs-btn:active:not(:disabled) {
+  background: rgba(240,96,0,.12);
+  border-color: #f06000;
+}
+.cs-value {
+  font-size: 22px;
+  font-weight: 900;
+  color: #2a1800;
+  min-width: 28px;
+  text-align: center;
+  line-height: 1;
+}
+.cs-range {
+  font-size: 10px;
+  color: #b09070;
+  flex-shrink: 0;
+}
+
+/* 手选提示 */
+.compound-pick-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.compound-pick-label {
+  margin: 0;
+  font-size: 13px;
+  color: #6a4020;
+}
+.compound-pick-label strong {
+  color: #f06000;
+  font-size: 15px;
+}
+
+/* 手选球的特殊状态 */
+.pick-compound-selected {
+  background: linear-gradient(180deg, #ff6040, #c02020) !important;
+  color: #fff !important;
+  border-color: #a01010 !important;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #f06000;
+  transform: scale(1.08);
+}
+.pick-compound-blue-selected {
+  background: linear-gradient(180deg, #4090ff, #1a50c0) !important;
+  color: #fff !important;
+  border-color: #1040a0 !important;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #2a67d8;
+  transform: scale(1.08);
+}
+.pick-compound-full {
+  opacity: .35;
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+
+/* 复式摇号大按钮 */
+.compound-shake-btn {
+  width: 100%;
+  padding: 14px 0;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f06000 0%, #f5a623 100%);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(240,96,0,.35);
+  transition: transform .15s, box-shadow .15s, background .3s;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.compound-shake-btn:active:not(:disabled) {
+  transform: scale(.96);
+  box-shadow: 0 2px 10px rgba(240,96,0,.25);
+}
+.compound-shake-btn:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+.compound-shake-btn.loading {
+  background: linear-gradient(135deg, #c0a060, #e0c090);
+}
+
+/* 结果展示区 */
+.compound-result {
+  background: linear-gradient(180deg, #fffcf5, #fff5e8);
+  border: 1.5px solid #f5c080;
+  border-radius: 14px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.compound-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.compound-result-tag {
+  font-size: 14px;
+  font-weight: 800;
+  color: #f06000;
+  background: #fff0d0;
+  padding: 3px 12px;
+  border-radius: 999px;
+}
+.compound-balls-display {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0;
+}
+.compound-blue-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+  border-top: 1px dashed #e0d0b8;
+}
+
+/* 注数与金额统计 */
+.compound-stats {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  background: #fff;
+  border: 1px solid #f0d8b0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.compound-stat-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 8px;
+  gap: 2px;
+}
+.compound-stat-divider {
+  width: 1px;
+  height: 36px;
+  background: #f0d8b0;
+  flex-shrink: 0;
+}
+.csi-label {
+  font-size: 11px;
+  color: #a08060;
+  font-weight: 500;
+}
+.csi-value {
+  font-size: 20px;
+  font-weight: 900;
+  color: #3a2010;
+  line-height: 1;
+}
+.csi-value small {
+  font-size: 11px;
+  font-weight: 600;
+  color: #b07040;
+  margin-left: 2px;
+}
+.csi-price {
+  color: #e04000;
+}
+
+/* 清空按钮 */
+.compound-clear-btn {
+  width: 100%;
+  padding: 10px;
+  border: 1.5px solid #ddd;
+  border-radius: 999px;
+  background: #fff;
+  color: #888;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+}
+.compound-clear-btn:active {
+  background: #f5f5f5;
+  border-color: #bbb;
+  transform: scale(.97);
+}
+
+/* 空状态 */
+.compound-empty {
+  padding: 20px 0;
+  text-align: center;
+}
+.compound-empty p {
+  margin: 0;
+  font-size: 14px;
+  color: #b09070;
+}
+
+/* 公式提示 */
+.compound-formula-hint {
+  margin: 0;
+  font-size: 11px;
+  color: #b09070;
+  text-align: center;
+  padding: 4px 0 0;
+}
 </style>
