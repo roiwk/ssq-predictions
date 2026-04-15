@@ -752,7 +752,6 @@ function matchClass({ redMatch, blueMatch }) {
               <span class="cs-value">{{ compoundRedCount }}</span>
               <button class="cs-btn" @click="setCompoundRedCount(compoundRedCount + 1)" :disabled="compoundRedCount >= 20">+</button>
             </div>
-            <span class="cs-range">6~20</span>
           </div>
           <div class="compound-stepper">
             <span class="cs-label"><span class="rule-badge blue-badge">蓝球</span></span>
@@ -761,7 +760,6 @@ function matchClass({ redMatch, blueMatch }) {
               <span class="cs-value">{{ compoundBlueCount }}</span>
               <button class="cs-btn" @click="setCompoundBlueCount(compoundBlueCount + 1)" :disabled="compoundBlueCount >= 16">+</button>
             </div>
-            <span class="cs-range">1~16</span>
           </div>
         </div>
 
