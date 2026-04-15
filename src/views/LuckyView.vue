@@ -74,8 +74,23 @@ function loadHistory() {
 function saveHistory(rows) {
   const entry = {
     id: Date.now(),
+    type: 'single',
     time: new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
     rows: rows.map(r => ({ reds: [...r.reds], blue: r.blue })),
+  }
+  shakeHistory.value.unshift(entry)
+  if (shakeHistory.value.length > MAX_HISTORY) shakeHistory.value = shakeHistory.value.slice(0, MAX_HISTORY)
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(shakeHistory.value))
+}
+
+function saveCompoundHistory(reds, blues) {
+  const entry = {
+    id: Date.now(),
+    type: 'compound',
+    time: new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    reds: [...reds],
+    blues: [...blues],
+    betCount: comb(reds.length, 6) * comb(blues.length, 1),
   }
   shakeHistory.value.unshift(entry)
   if (shakeHistory.value.length > MAX_HISTORY) shakeHistory.value = shakeHistory.value.slice(0, MAX_HISTORY)
@@ -444,6 +459,7 @@ async function doCompoundShake() {
   compoundBlues.value = pickedBlues
 
   compoundPhase.value = 'done'
+  saveCompoundHistory(pickedReds, pickedBlues)
 }
 
 /** 清空复式选择 */
@@ -848,6 +864,8 @@ function matchClass({ redMatch, blueMatch }) {
             </div>
           </div>
 
+          <button v-if="compoundMode === 'manual' && compoundReds.length >= 6 && compoundBlues.length >= 1"
+            class="compound-save-btn" @click="saveCompoundHistory(compoundReds, compoundBlues)">💾 存入历史</button>
           <button class="compound-clear-btn" @click="clearCompound">🗑 清空重选</button>
         </div>
 
@@ -938,20 +956,51 @@ function matchClass({ redMatch, blueMatch }) {
 
         <p v-if="!shakeHistory.length" class="state-text">暂无记录，摇号后自动保存</p>
 
-        <div v-for="entry in shakeHistory" :key="entry.id" class="history-entry">
+        <div v-for="entry in shakeHistory" :key="entry.id" class="history-entry" :class="{ 'history-compound': entry.type === 'compound' }">
           <div class="history-entry-head">
             <span class="history-time">{{ entry.time }}</span>
-            <span class="history-count">{{ entry.rows.length }} 注</span>
+            <span v-if="entry.type === 'compound'" class="history-type-tag compound-tag">
+              🎯 复式 {{ entry.reds.length }}+{{ entry.blues.length }}
+            </span>
+            <span v-else class="history-type-tag single-tag">
+              🎰 单式 {{ entry.rows.length }} 注
+            </span>
           </div>
-          <div v-for="(row, ri) in entry.rows" :key="ri" class="history-row">
-            <span class="row-index">第 {{ ri + 1 }} 注</span>
-            <div class="balls-row">
-              <div class="ball-group">
-                <span v-for="r in row.reds" :key="r" class="ball red sm-ball">{{ formatBall(r) }}</span>
+
+          <!-- 单式历史 -->
+          <template v-if="entry.type !== 'compound'">
+            <div v-for="(row, ri) in entry.rows" :key="ri" class="history-row">
+              <span class="row-index">第 {{ ri + 1 }} 注</span>
+              <div class="balls-row">
+                <div class="ball-group">
+                  <span v-for="r in row.reds" :key="r" class="ball red sm-ball">{{ formatBall(r) }}</span>
+                </div>
+                <span class="ball blue sm-ball">{{ formatBall(row.blue) }}</span>
               </div>
-              <span class="ball blue sm-ball">{{ formatBall(row.blue) }}</span>
             </div>
-          </div>
+          </template>
+
+          <!-- 复式历史 -->
+          <template v-else>
+            <div class="history-compound-body">
+              <div class="history-compound-row">
+                <span class="hc-label">红球</span>
+                <div class="ball-group">
+                  <span v-for="r in entry.reds" :key="r" class="ball red sm-ball">{{ formatBall(r) }}</span>
+                </div>
+              </div>
+              <div class="history-compound-row">
+                <span class="hc-label">蓝球</span>
+                <div class="ball-group">
+                  <span v-for="b in entry.blues" :key="b" class="ball blue sm-ball">{{ formatBall(b) }}</span>
+                </div>
+              </div>
+              <div class="history-compound-stats">
+                <span>共 <strong>{{ entry.betCount }}</strong> 注</span>
+                <span class="hc-cost">¥{{ (entry.betCount * 2).toLocaleString() }}</span>
+              </div>
+            </div>
+          </template>
         </div>
       </section>
     </template>
@@ -1766,4 +1815,85 @@ function matchClass({ redMatch, blueMatch }) {
   text-align: center;
   padding: 4px 0 0;
 }
+
+/* 存入历史按钮 */
+.compound-save-btn {
+  width: 100%;
+  padding: 10px;
+  border: 1.5px solid #f06000;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #fff8f0, #fff0e0);
+  color: #f06000;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .18s;
+}
+.compound-save-btn:active {
+  background: #f06000;
+  color: #fff;
+  transform: scale(.97);
+}
+
+/* ══ 历史记录 - 类型标签 ══ */
+.history-type-tag {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.single-tag {
+  background: #fff5e0;
+  color: #a06800;
+}
+.compound-tag {
+  background: linear-gradient(135deg, #fff0d0, #ffe0b0);
+  color: #c05000;
+  border: 1px solid #f5c080;
+}
+
+/* 复式历史条目 */
+.history-compound {
+  border-color: #f5c080;
+  background: linear-gradient(180deg, #fffcf5, #fff5e8) !important;
+}
+.history-compound-body {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.history-compound-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.hc-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #b07040;
+  min-width: 28px;
+  flex-shrink: 0;
+}
+.history-compound-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0 2px;
+  border-top: 1px dashed #f0d8b0;
+  font-size: 12px;
+  color: #8a6030;
+}
+.history-compound-stats strong {
+  color: #f06000;
+  font-size: 14px;
+}
+.hc-cost {
+  font-weight: 800;
+  color: #e04000;
+  font-size: 14px;
+}
 </style>
+
