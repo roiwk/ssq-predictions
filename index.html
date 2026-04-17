@@ -27,7 +27,7 @@
     <!-- Misc SEO -->
     <meta name="robots" content="index, follow" />
     <meta name="theme-color" content="#2f5fe7" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
     <!-- JSON-LD Structured Data -->
     <script type="application/ld+json">
@@ -57,9 +57,32 @@
   </head>
   <body>
     <noscript>
-      <p>双色球预测平台需要启用 JavaScript 才能正常运行。</p>
+      <div class="seo-content">
+        <h1>双色球预测 - 多策略智能分析平台</h1>
+        <p>欢迎使用双色球多策略智能预测分析平台。本平台基于历史数据统计与机器学习模型，提供多种预测策略结果。</p>
+        <h2>平台功能</h2>
+        <ul>
+          <li><strong>多策略预测</strong> - 多种统计与机器学习策略综合分析，为下期双色球提供预测参考号码</li>
+          <li><strong>历史开奖查询</strong> - 查看双色球全部历史开奖号码、奖级详情、销售额与奖池数据</li>
+          <li><strong>随机摇号</strong> - 按双色球规则（红球01~33选6，蓝球01~16选1）随机生成号码，支持单式/复式</li>
+        </ul>
+        <h2>双色球规则</h2>
+        <p>中国福利彩票双色球：从01-33中选取6个红色球号码，从01-16中选取1个蓝色球号码组成一注进行投注。</p>
+        <nav>
+          <a href="/">预测首页</a> |
+          <a href="/history">历史开奖</a> |
+          <a href="/lucky">随机摇号</a>
+        </nav>
+        <p><em>本站预测结果仅供参考，不构成任何购彩建议。理性购彩，量力而行。</em></p>
+      </div>
     </noscript>
-    <div id="app"></div>
+    <div id="app">
+      <!-- 初始骨架内容，Vue 挂载后自动替换 -->
+      <main class="page home-page">
+        <header class="home-header"><div><h1 class="page-title">🎯 双色球预测</h1><p class="page-subtitle">多策略结果一览</p></div></header>
+        <section class="content-card"><p class="state-text">正在加载预测结果...</p></section>
+      </main>
+    </div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

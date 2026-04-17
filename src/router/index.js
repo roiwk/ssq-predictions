@@ -38,14 +38,50 @@ const router = createRouter({
   ],
 })
 
-router.afterEach((to) => {
-  document.title = to.meta.title || DEFAULT_TITLE
+const SITE_URL = 'https://ssq.roiwk.cn'
 
-  // 动态更新 meta description
-  const descEl = document.querySelector('meta[name="description"]')
-  if (descEl && to.meta.description) {
-    descEl.setAttribute('content', to.meta.description)
-  }
+router.afterEach((to) => {
+  const title = to.meta.title || DEFAULT_TITLE
+  const description = to.meta.description || ''
+  const url = `${SITE_URL}${to.path}`
+
+  // 更新 title
+  document.title = title
+
+  // 更新 meta description
+  updateMeta('name', 'description', description)
+
+  // 更新 canonical
+  updateLink('canonical', url)
+
+  // 更新 Open Graph
+  updateMeta('property', 'og:title', title)
+  updateMeta('property', 'og:description', description)
+  updateMeta('property', 'og:url', url)
+
+  // 更新 Twitter Card
+  updateMeta('name', 'twitter:title', title)
+  updateMeta('name', 'twitter:description', description)
 })
+
+function updateMeta(attr, key, value) {
+  let el = document.querySelector(`meta[${attr}="${key}"]`)
+  if (!el) {
+    el = document.createElement('meta')
+    el.setAttribute(attr, key)
+    document.head.appendChild(el)
+  }
+  el.setAttribute('content', value)
+}
+
+function updateLink(rel, href) {
+  let el = document.querySelector(`link[rel="${rel}"]`)
+  if (!el) {
+    el = document.createElement('link')
+    el.setAttribute('rel', rel)
+    document.head.appendChild(el)
+  }
+  el.setAttribute('href', href)
+}
 
 export default router

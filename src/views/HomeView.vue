@@ -69,50 +69,53 @@ onMounted(loadPredictions)
       <span class="meta-pill">更新时间：{{ predictTime || '--' }}</span>
     </section>
 
-    <section class="content-card">
+    <section class="content-card" aria-label="预测策略结果">
       <p v-if="loading" class="state-text">正在加载预测结果...</p>
       <p v-else-if="errorText" class="state-text state-error">{{ errorText }}</p>
       <p v-else-if="!hasData" class="state-text">暂无预测结果</p>
 
       <ul v-else class="strategy-list">
         <li v-for="item in strategies" :key="item.id || item.name" class="strategy-item">
-          <div class="strategy-head">
-            <p class="strategy-name">{{ item.name || '未命名策略' }}</p>
-            <div class="strategy-actions">
-              <span class="elapsed-tag" v-if="item.elapsed !== undefined">
-                {{ formatElapsed(item.elapsed) }}
-              </span>
-              <button
-                v-if="item.description"
-                class="tip-btn"
-                :class="{ active: expandedTip === (item.id || item.name) }"
-                @click="toggleTip(item.id || item.name)"
-                title="查看策略说明"
-              >
-                ?
-              </button>
+          <article>
+            <div class="strategy-head">
+              <p class="strategy-name">{{ item.name || '未命名策略' }}</p>
+              <div class="strategy-actions">
+                <span class="elapsed-tag" v-if="item.elapsed !== undefined">
+                  {{ formatElapsed(item.elapsed) }}
+                </span>
+                <button
+                  v-if="item.description"
+                  class="tip-btn"
+                  :class="{ active: expandedTip === (item.id || item.name) }"
+                  @click="toggleTip(item.id || item.name)"
+                  title="查看策略说明"
+                >
+                  ?
+                </button>
+              </div>
             </div>
-          </div>
 
-          <!-- 策略描述气泡 -->
-          <Transition name="tip-fade">
-            <div v-if="expandedTip === (item.id || item.name) && item.description" class="tip-bubble">
-              {{ item.description }}
-            </div>
-          </Transition>
+            <!-- 策略描述气泡 -->
+            <Transition name="tip-fade">
+              <div v-if="expandedTip === (item.id || item.name) && item.description" class="tip-bubble">
+                {{ item.description }}
+              </div>
+            </Transition>
 
-          <div class="balls-row">
-            <div class="ball-group">
-              <span
-                v-for="red in normalizeRedBalls(item.red)"
-                :key="`${item.id || item.name}-red-${red}`"
-                class="ball red"
-              >
-                {{ formatBall(red) }}
-              </span>
+            <div class="balls-row" role="list" aria-label="预测号码">
+              <div class="ball-group">
+                <span
+                  v-for="red in normalizeRedBalls(item.red)"
+                  :key="`${item.id || item.name}-red-${red}`"
+                  class="ball red"
+                  role="listitem"
+                >
+                  {{ formatBall(red) }}
+                </span>
+              </div>
+              <span class="ball blue" role="listitem">{{ formatBall(item.blue || '--') }}</span>
             </div>
-            <span class="ball blue">{{ formatBall(item.blue || '--') }}</span>
-          </div>
+          </article>
         </li>
       </ul>
     </section>

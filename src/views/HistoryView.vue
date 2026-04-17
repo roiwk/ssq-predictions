@@ -140,7 +140,7 @@ onUnmounted(() => {
       </div>
     </header>
 
-    <section class="history-content">
+    <section class="history-content" aria-label="历史开奖记录">
       <p v-if="loading" class="state-text">正在加载历史开奖...</p>
       <p v-else-if="errorText" class="state-text state-error">{{ errorText }}</p>
       <p v-else-if="!hasData" class="state-text">暂无历史开奖数据</p>
