@@ -58,10 +58,13 @@ router.afterEach((to) => {
   updateMeta('property', 'og:title', title)
   updateMeta('property', 'og:description', description)
   updateMeta('property', 'og:url', url)
+  updateMeta('property', 'og:image', `${SITE_URL}/og-image.png`)
 
   // 更新 Twitter Card
+  updateMeta('name', 'twitter:card', 'summary_large_image')
   updateMeta('name', 'twitter:title', title)
   updateMeta('name', 'twitter:description', description)
+  updateMeta('name', 'twitter:image', `${SITE_URL}/og-image.png`)
 })
 
 function updateMeta(attr, key, value) {

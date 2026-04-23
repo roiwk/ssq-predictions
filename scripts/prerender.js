@@ -1,6 +1,7 @@
 /**
  * 构建后预渲染脚本
- * 为每个路由生成独立的 index.html，包含完整 SEO 标签和语义化静态内容
+ * 为每个路由生成独立 HTML，包含完整 SEO 标签和语义化静态内容
+ * 同时自动生成 sitemap.xml
  * 让搜索引擎爬虫无需执行 JS 即可读取页面核心信息
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
@@ -10,6 +11,8 @@ import { fileURLToPath } from 'url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DIST = resolve(__dirname, '../dist')
 const SITE_URL = 'https://ssq.roiwk.cn'
+const OG_IMAGE = `${SITE_URL}/og-image.png`
+const TODAY = new Date().toISOString().slice(0, 10)  // YYYY-MM-DD
 
 // 路由 SEO 配置
 const routes = [
@@ -18,6 +21,7 @@ const routes = [
     outputPath: 'index.html',
     title: '双色球预测 - 多策略智能分析与历史开奖查询',
     description: '双色球多策略智能预测分析平台，基于历史数据统计与机器学习模型，提供多种预测策略结果及历史开奖数据查询。',
+    keywords: '双色球预测,双色球,SSQ预测,彩票预测,多策略预测,智能分析,机器学习预测,下期预测',
     canonical: `${SITE_URL}/`,
     ogType: 'website',
     jsonLd: {
@@ -55,9 +59,10 @@ const routes = [
   },
   {
     path: '/history',
-    outputPath: 'history/index.html',
+    outputPath: 'history.html',
     title: '历史开奖查询 - 双色球预测',
     description: '查询双色球全部历史开奖号码，包含红球蓝球号码、各奖级中奖注数与金额、销售额及奖池滚存数据，支持分页浏览。',
+    keywords: '双色球开奖,历史开奖,开奖记录,开奖查询,双色球号码,中奖号码,奖池数据,开奖结果',
     canonical: `${SITE_URL}/history`,
     ogType: 'website',
     jsonLd: {
@@ -98,9 +103,10 @@ const routes = [
   },
   {
     path: '/lucky',
-    outputPath: 'lucky/index.html',
+    outputPath: 'lucky.html',
     title: '随机摇号 - 双色球号码生成器',
     description: '双色球随机号码生成器，支持单式摇号（1~10注）和复式选号，可设置排除号码、固定号码、过滤连号等条件，前端本地生成。',
+    keywords: '双色球摇号,随机号码,号码生成器,双色球选号,复式选号,摇一摇,在线摇号,随机选号',
     canonical: `${SITE_URL}/lucky`,
     ogType: 'website',
     jsonLd: {
@@ -185,6 +191,8 @@ function stripExistingSEO(html) {
   html = html.replace(/<meta\s+name="twitter:[^"]*"[^>]*\/?\s*>\s*/gi, '')
   // 移除已有的 canonical link
   html = html.replace(/<link\s+rel="canonical"[^>]*\/?\s*>\s*/gi, '')
+  // 移除已有的 apple-touch-icon link
+  html = html.replace(/<link\s+rel="apple-touch-icon"[^>]*\/?\s*>\s*/gi, '')
   // 移除已有的 JSON-LD script blocks
   html = html.replace(/<script\s+type="application\/ld\+json"[\s\S]*?<\/script>\s*/gi, '')
   // 移除 HTML 注释块标题（<!-- SEO Meta --> 等）
@@ -208,24 +216,29 @@ function processRoute(cleanTemplate, route) {
   const seoMeta = `
     <!-- SEO Meta -->
     <meta name="description" content="${route.description}" />
-    <meta name="keywords" content="双色球,双色球预测,SSQ,彩票分析,历史开奖,开奖查询,多策略预测,随机摇号" />
+    <meta name="keywords" content="${route.keywords}" />
     <meta name="author" content="roiwk" />
     <link rel="canonical" href="${route.canonical}" />
     <meta name="robots" content="index, follow" />
     <meta name="theme-color" content="#2f5fe7" />
+    <link rel="apple-touch-icon" href="/og-image.png" />
 
     <!-- Open Graph -->
     <meta property="og:type" content="${route.ogType}" />
     <meta property="og:title" content="${route.title}" />
     <meta property="og:description" content="${route.description}" />
     <meta property="og:url" content="${route.canonical}" />
+    <meta property="og:image" content="${OG_IMAGE}" />
+    <meta property="og:image:width" content="1024" />
+    <meta property="og:image:height" content="1024" />
     <meta property="og:site_name" content="双色球预测" />
     <meta property="og:locale" content="zh_CN" />
 
     <!-- Twitter Card -->
-    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="${route.title}" />
     <meta name="twitter:description" content="${route.description}" />
+    <meta name="twitter:image" content="${OG_IMAGE}" />
 
     <!-- JSON-LD Structured Data -->
     <script type="application/ld+json">${JSON.stringify(route.jsonLd)}</script>
@@ -289,5 +302,28 @@ for (const route of routes) {
 
   console.log(`  ✅ ${route.path} → dist/${route.outputPath}`)
 }
+
+// ── 自动生成 sitemap.xml ──
+const sitemapEntries = routes.map(route => {
+  const loc = route.canonical
+  // 首页每日更新，其他页面按各自频率
+  const changefreq = route.path === '/' ? 'daily' : route.path === '/history' ? 'daily' : 'weekly'
+  const priority = route.path === '/' ? '1.0' : route.path === '/history' ? '0.8' : '0.7'
+  return `  <url>
+    <loc>${loc}</loc>
+    <lastmod>${TODAY}</lastmod>
+    <changefreq>${changefreq}</changefreq>
+    <priority>${priority}</priority>
+  </url>`
+})
+
+const sitemapXml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${sitemapEntries.join('\n')}
+</urlset>
+`
+
+writeFileSync(resolve(DIST, 'sitemap.xml'), sitemapXml, 'utf-8')
+console.log(`  ✅ sitemap.xml (lastmod: ${TODAY})`)
 
 console.log('\n🎉 预渲染完成！')
